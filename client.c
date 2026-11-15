@@ -1,36 +1,60 @@
 #include <stdio.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
-int main(int argc, char ** argv)
-{
-    unsigned short port;
-    char bufStore[25];
-    int hostResol;
-    struct addrinfo *hostName;
-    struct sockaddr_in server;
-    int cliSocket;
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
-    if(argc!=3)
-    {
-        fprintf(stderr,"Usage: %s hostname port\n",argv[0]);
-        exit(EXIT_FAILURE);
+#define BUFF_SIZE 4096
+#define MAX_LISTEN_BACKLOG 1
+
+
+
+void clientConnect(int clientSocketFd ,char* backendHostAddr, char* backendPort ) {
+struct addrinfo hints;
+struct addrinfo *addrs;
+struct addrinfo *addrsIterable;
+int locateAddrError;
+int backEndSocketFd;
+char buffer[BUFF_SIZE];
+int bytes_read;
+
+memset(&hints, 0,sizeof(struct addrinfo));
+hints.ai_family =AF_UNSPEC;
+hints.ai_socktype =SOCK_STREAM;
+
+locateAddrError = getaddrinfo(backendHostAddr,backendPort,&hints,&addrs);
+if(locateAddrError!=0) {
+    fprintf(stderr,"Can't locate backend %s/n",gai_strerror(locateAddrError));
+    exit(1);
+}
+
+for (addrsIterable=addrs;
+    addrsIterable!=NULL;
+    addrsIterable=addrs->ai_next) {
+        backEndSocketFd=socket(addrsIterable->ai_family,
+            addrsIterable->ai_socktype,
+            addrsIterable->ai_protocol);
+        if(backEndSocketFd==-1) {
+            continue;;
+        }
+
+        if(connect(backEndSocketFd,addrsIterable,addrsIterable->ai_addrlen)!=-1){
+            break;
+        }
+        close(backEndSocketFd);
     }
-
-    hostResol=getaddrinfo(NULL,argv[1],NULL,&hostName);
-    if(hostResol!=0)
-    {
-        fprintf(stderr,"getaddrinfo: %s \n",gai_strerror(hostResol));
-        exit(EXIT_FAILURE);
+    if(addrsIterable==NULL) {
+        fprintf(stderr, "Could not connect to backend");
+        exit(1);
     }
-
-    port = (unsigned short)atoi(argv[2]);
-    strcpy(bufStore,"Socket Messages are cool");
-
-    server.sin_family = AF_INET;
-    server.sin_port=htons(port);
-
+    freeaddrinfo(addrs);
+    bytes_read = read(clientSocketFd, buffer, BUFF_SIZE);
+    write(backEndSocketFd, buffer, bytes_read);
+    while(bytes_read = read(backEndSocketFd,buffer, BUFF_SIZE)) {
+     write(clientSocketFd,buffer,bytes_read);
+    
+    }
+    close(clientSocketFd);
 }
